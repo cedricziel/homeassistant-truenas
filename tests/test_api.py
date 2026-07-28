@@ -9,6 +9,7 @@ network I/O happens.
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -43,8 +44,7 @@ from custom_components.truenas_ce.const import (
 )
 
 
-@pytest.fixture
-def api() -> TrueNASAPI:
+def _build_api(**kwargs: object) -> TrueNASAPI:
     """Build a TrueNASAPI whose underlying aiotruenas client is a mock.
 
     The mock starts disconnected, matching the falsy state a fresh,
@@ -57,7 +57,19 @@ def api() -> TrueNASAPI:
     mock_client.call = AsyncMock()
     mock_client.close = AsyncMock()
     with patch.object(api_module, "TrueNASClient", return_value=mock_client):
-        return TrueNASAPI("truenas.local", "api-key")
+        return TrueNASAPI("truenas.local", "api-key", **kwargs)  # type: ignore[arg-type]
+
+
+@pytest.fixture
+def api() -> TrueNASAPI:
+    """The mocked TrueNASAPI with default (verbose) connect-error logging."""
+    return _build_api()
+
+
+@pytest.fixture
+def quiet_api() -> TrueNASAPI:
+    """The mocked TrueNASAPI as the zeroconf probe builds it."""
+    return _build_api(log_connect_errors=False)
 
 
 @pytest.fixture
@@ -201,6 +213,35 @@ async def test_connect_maps_exception_and_returns_false(api: TrueNASAPI) -> None
     api._client.connect.side_effect = TrueNASHostUnknownError("nope")
     assert await api.connect() is False
     assert api.error == ERR_UNKNOWN_HOSTNAME
+
+
+async def test_connect_failure_logs_error_with_traceback_by_default(
+    api: TrueNASAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failing configured host is a real problem and stays at ERROR level."""
+    api._client.connect.side_effect = TrueNASHostUnknownError("nope")
+    with caplog.at_level(logging.DEBUG, logger=api_module.__name__):
+        assert await api.connect() is False
+    records = [
+        r for r in caplog.records if "Error while communicating" in r.getMessage()
+    ]
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert records[0].exc_info is not None
+
+
+async def test_connect_failure_logs_debug_without_traceback_when_quiet(
+    quiet_api: TrueNASAPI, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Probe failures are the normal case, so they must not reach the log."""
+    quiet_api._client.connect.side_effect = TrueNASHostUnknownError("nope")
+    with caplog.at_level(logging.DEBUG, logger=api_module.__name__):
+        assert await quiet_api.connect() is False
+    assert quiet_api.error == ERR_UNKNOWN_HOSTNAME
+    records = [
+        r for r in caplog.records if "Error while communicating" in r.getMessage()
+    ]
+    assert [r.levelno for r in records] == [logging.DEBUG]
+    assert records[0].exc_info is None
 
 
 # ---------------------------

@@ -370,7 +370,12 @@ async def _async_probe_candidate(host: str) -> bool:
     treated as "not TrueNAS".
     """
     for scheme in ("wss", "ws"):
-        api = TrueNASAPI(host, "-", verify_ssl=False, scheme=scheme)
+        # Every announced ``_http._tcp`` device is probed, so a failed connect
+        # is the expected outcome for most of them; keep it out of the error
+        # log (see TrueNASAPI's log_connect_errors).
+        api = TrueNASAPI(
+            host, "-", verify_ssl=False, scheme=scheme, log_connect_errors=False
+        )
         try:
             if not await _async_try_connect(
                 api, host, f"probe ({scheme}) is not reachable"
@@ -625,6 +630,10 @@ class TrueNASConfigFlow(ConfigFlow, domain=DOMAIN):
                 host,
                 entry.data.get(CONF_API_KEY, ""),
                 entry.data.get(CONF_VERIFY_SSL, DEFAULT_SSL_VERIFY),
+                # Each configured entry's key is tried against the newly found
+                # host, so a rejected key or refused connection is a normal
+                # "not this entry" answer rather than an error.
+                log_connect_errors=False,
             )
             try:
                 # A connection-level failure (DNS, refused, SSL, ...) must not

@@ -247,7 +247,9 @@ async def test_probe_is_truenas_true_on_invalid_key() -> None:
     api.error = ERR_INVALID_KEY
     with patch.object(config_flow, "TrueNASAPI", return_value=api) as mock_api:
         assert await TrueNASConfigFlow._probe_is_truenas("1.2.3.4") == "1.2.3.4"
-    mock_api.assert_called_once_with("1.2.3.4", "-", verify_ssl=False, scheme="wss")
+    mock_api.assert_called_once_with(
+        "1.2.3.4", "-", verify_ssl=False, scheme="wss", log_connect_errors=False
+    )
     api.disconnect.assert_awaited_once()
 
 
@@ -280,7 +282,9 @@ async def test_probe_is_truenas_falls_back_from_wss_to_ws() -> None:
     ) as mock_api:
         assert await TrueNASConfigFlow._probe_is_truenas("1.2.3.4") == "1.2.3.4"
     assert mock_api.call_count == 2
-    mock_api.assert_any_call("1.2.3.4", "-", verify_ssl=False, scheme="ws")
+    mock_api.assert_any_call(
+        "1.2.3.4", "-", verify_ssl=False, scheme="ws", log_connect_errors=False
+    )
 
 
 async def test_probe_is_truenas_false_when_connect_raises() -> None:
@@ -324,7 +328,9 @@ async def test_probe_is_truenas_falls_back_to_advertised_port() -> None:
     ) as mock_api:
         probed = await TrueNASConfigFlow._probe_is_truenas("1.2.3.4", 8443)
     assert probed == "1.2.3.4:8443"
-    mock_api.assert_any_call("1.2.3.4:8443", "-", verify_ssl=False, scheme="wss")
+    mock_api.assert_any_call(
+        "1.2.3.4:8443", "-", verify_ssl=False, scheme="wss", log_connect_errors=False
+    )
 
 
 @pytest.mark.parametrize("port", [None, 80, 443])

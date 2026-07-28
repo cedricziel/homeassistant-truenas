@@ -1,7 +1,7 @@
 """TrueNAS API."""
 
 import asyncio
-from logging import DEBUG, getLogger
+from logging import DEBUG, ERROR, getLogger
 from typing import Any
 
 from aiotruenas import TrueNASClient
@@ -120,6 +120,7 @@ class TrueNASAPI:
         api_key: str,
         verify_ssl: bool = True,
         scheme: str = "wss",
+        log_connect_errors: bool = True,
     ) -> None:
         """Initialize the TrueNAS API.
 
@@ -136,6 +137,13 @@ class TrueNASAPI:
             Whether to verify the SSL certificate when using ``wss``.
         scheme:
             WebSocket scheme, either ``"ws"`` or ``"wss"`` (default).
+        log_connect_errors:
+            Whether a failed :meth:`connect` is an error worth reporting.
+            True (default) for the configured host, where a failure means
+            the integration is broken. Set to False for throwaway instances
+            whose connection is *expected* to fail -- the zeroconf probe
+            talks to every announced device, so its failures are the normal
+            case and are logged at debug level instead.
         """
         scheme = scheme.lower()
         if scheme not in ("ws", "wss"):
@@ -147,6 +155,7 @@ class TrueNASAPI:
         self._scheme = scheme
         self._error = ""
         self._closed = False
+        self._log_connect_errors = log_connect_errors
         self._client = TrueNASClient(
             host,
             api_key,
@@ -173,11 +182,15 @@ class TrueNASAPI:
             await self._client.connect()
         except TrueNASError as exc:
             self._error = _classify_exception(exc, during_call=False)
-            _LOGGER.error(
+            # A probe instance talks to hosts that are not TrueNAS at all, so
+            # its failures are routine and must not fill the log with
+            # tracebacks -- see the log_connect_errors docstring.
+            _LOGGER.log(
+                ERROR if self._log_connect_errors else DEBUG,
                 "Error while communicating with host %s: %s",
                 self._host,
                 exc,
-                exc_info=exc,
+                exc_info=exc if self._log_connect_errors else None,
             )
             return False
 
